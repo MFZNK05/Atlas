@@ -35,9 +35,11 @@ func NewL7LBProperties(pools map[string]*backend.L7ServerPool) *L7LBProperties {
 type LBProperties struct {
 	Transport             *TCPTransport
 	L4ServerPoolInterface algorithm.ServerPool
-	L4ServerPool          *backend.L4BackendPool
-	AlgorithmsMap         map[string]algorithm.LBStrategy
-	L7LBProperties        *L7LBProperties
+	//L7ServerPoolInterface algorithm.ServerPool
+	L4ServerPool *backend.L4BackendPool
+	//L7ServerPool          *backend.L7ServerPool
+	AlgorithmsMap  map[string]algorithm.LBStrategy
+	L7LBProperties *L7LBProperties
 }
 
 func NewLBProperties(Transport TCPTransport, L4Pool backend.L4BackendPool, L7Prop *L7LBProperties) *LBProperties {

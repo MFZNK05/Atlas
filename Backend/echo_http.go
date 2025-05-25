@@ -103,3 +103,47 @@ func dynamicHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[L7_TEST_SERVER] Error encoding response: %v", err)
 	}
 }
+
+func MakeL7CookieTestServers() []*L7BackendServer {
+	var servers []*L7BackendServer
+
+	weights := []int{5, 3, 1} // Highly skewed weights
+
+	for i := 0; i < 3; i++ {
+		addr := fmt.Sprintf(":802%d", i)
+		opts := L7ServerOpts{
+			Address: addr,
+			Weight:  weights[i],
+		}
+		server := NewL7Server(opts)
+		log.Printf("[L7_TEST_SERVER] Creating cookie test server at %s with weight %d", addr, weights[i])
+		go server.testCookieServerListener()
+		servers = append(servers, server)
+	}
+
+	return servers
+}
+
+func (s *L7BackendServer) testCookieServerListener() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[COOKIE_BACKEND:%s] Request received: %s", s.Address, r.URL.Path)
+
+		// Respond with a unique message
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf("Response from %s\n", s.Address)))
+	})
+
+	server := &http.Server{
+		Addr:    s.Address,
+		Handler: mux,
+	}
+
+	log.Printf("[COOKIE_BACKEND:%s] Starting cookie test server", s.Address)
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		log.Printf("[COOKIE_BACKEND:%s] Listen error: %v", s.Address, err)
+	}
+}

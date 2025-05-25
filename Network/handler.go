@@ -33,26 +33,39 @@ func (lb *LBProperties) HandleHTTP(peekReader *bufio.Reader, conn net.Conn) {
 		return
 	}
 
-	path := req.URL.Path
-	urlType := ClassifyURLRequest(path)
-	pool := lb.L7LBProperties.L7Pools[urlType]
-	if pool == nil {
-		log.Printf("[HTTP_HANDLER] No server pool found for URL type: %s", urlType)
-		return
-	}
+	server := lb.SelectL7Server(req)
 
-	l7Adapter := algorithm.L7PoolAdapter{pool}
-	algoName := algorithm.SelectAlgoL7(&l7Adapter)
-	if algoName == "" {
-		log.Println("[HTTP_HANDLER] No algorithm selected for L7 request")
-		return
-	}
+	// path := req.URL.Path
+	// cookie, err := req.Cookie("session_id")
+	// if err == http.ErrNoCookie {
+	// 	log.Printf("[HTTP_HANDLER] SESSION cookie not available: %v", err)
+	// } else if err != nil {
+	// 	log.Printf("[HTTP_HANDLER] Error retrieving SESSION cookie: %v", err)
+	// } else {
+	// 	// Cookie found, you can use it here
+	// 	log.Printf("[HTTP_HANDLER] SESSION cookie found: %s", cookie.Value)
+	// 	server := lb.ClassifyCookieRequest(cookie.Value)
+	// }
 
-	server := algorithm.ApplyAlgo(&l7Adapter, algoName, lb.AlgorithmsMap)
-	if server == nil {
-		log.Println("[HTTP_HANDLER] No server returned by algorithm")
-		return
-	}
+	// urlType := ClassifyURLRequest(path)
+	// pool := lb.L7LBProperties.L7Pools[urlType]
+	// if pool == nil {
+	// 	log.Printf("[HTTP_HANDLER] No server pool found for URL type: %s", urlType)
+	// 	return
+	// }
+
+	// l7Adapter := algorithm.L7PoolAdapter{pool}
+	// algoName := algorithm.SelectAlgoL7(&l7Adapter)
+	// if algoName == "" {
+	// 	log.Println("[HTTP_HANDLER] No algorithm selected for L7 request")
+	// 	return
+	// }
+
+	// server := algorithm.ApplyAlgo(&l7Adapter, algoName, lb.AlgorithmsMap)
+	// if server == nil {
+	// 	log.Println("[HTTP_HANDLER] No server returned by algorithm")
+	// 	return
+	// }
 
 	log.Printf("[HTTP_HANDLER] Selected backend: %s", server.GetAddress())
 
@@ -81,13 +94,53 @@ func (lb *LBProperties) HandleHTTP(peekReader *bufio.Reader, conn net.Conn) {
 		log.Printf("[HTTP_HANDLER] Error copying backend → client: %v", err)
 	}
 
-	log.Printf("[HTTP_HANDLER] TCP forwarding done for path %s", path)
+	log.Printf("[HTTP_HANDLER] TCP forwarding done for path %s", req.URL.Path)
 	log.Printf("[HTTP_HANDLER] Total time taken: %v", time.Since(startTime))
 
 	// Decrement server connection count
 	server.Lock()
 	server.SetConnCount(server.GetConnCount() - 1)
 	server.Unlock()
+}
+
+func (lb *LBProperties) SelectL7Server(r *http.Request) algorithm.Server {
+	// Priority 1: Cookie-based routing
+	if cookie, err := r.Cookie("session_id"); err == nil {
+		log.Printf("[ROUTER] SESSION cookie found: %s", cookie.Value)
+		if server := lb.ClassifyCookieRequest(cookie.Value); server != nil {
+			log.Printf("[ROUTER] Using cookie-based server: %s", server.GetAddress())
+			return server
+		}
+	} else if err == http.ErrNoCookie {
+		log.Printf("[ROUTER] SESSION cookie not available")
+	} else {
+		log.Printf("[ROUTER] Error retrieving SESSION cookie: %v", err)
+	}
+
+	// Priority 2: URL-based routing
+	path := r.URL.Path
+	urlType := ClassifyURLRequest(path)
+	pool := lb.L7LBProperties.L7Pools[urlType]
+	if pool == nil {
+		log.Printf("[ROUTER] No server pool found for URL type: %s", urlType)
+		return nil
+	}
+
+	l7Adapter := &algorithm.L7PoolAdapter{pool}
+	algoName := algorithm.SelectAlgoL7(l7Adapter)
+	if algoName == "" {
+		log.Println("[ROUTER] No algorithm selected for URL")
+		return nil
+	}
+
+	server := algorithm.ApplyAlgo(l7Adapter, algoName, lb.AlgorithmsMap)
+	if server == nil {
+		log.Println("[ROUTER] No server returned for URL-based routing")
+		return nil
+	}
+
+	log.Printf("[ROUTER] Using URL-based server: %s", server.GetAddress())
+	return server
 }
 
 func ClassifyURLRequest(path string) string {
@@ -101,4 +154,33 @@ func ClassifyURLRequest(path string) string {
 	}
 
 	return "dynamic"
+}
+
+func (lb *LBProperties) ClassifyCookieRequest(sessionID string) algorithm.Server {
+	cookiePool := lb.L7LBProperties.L7Pools["cookie"]
+
+	// Check if session ID is already mapped
+	if server, ok := cookiePool.StickyClients[sessionID]; ok {
+		log.Printf("[COOKIE_ROUTING] Existing mapping found: %s -> %s", sessionID, server.Address)
+
+		wrapped := algorithm.L7ServerAdapter{server}
+		var serverInterface algorithm.Server = &wrapped
+		return serverInterface
+	}
+
+	// No mapping found, use load balancing algorithm to pick server
+	algoName := algorithm.SelectAlgoL7(&algorithm.L7PoolAdapter{cookiePool})
+	server := algorithm.ApplyAlgo(&algorithm.L7PoolAdapter{cookiePool}, algoName, lb.AlgorithmsMap)
+
+	adapter, ok := server.(*algorithm.L7ServerAdapter)
+	if !ok {
+		log.Printf("[COOKIE_ROUTING] Type assertion failed: not an L7ServerAdapter")
+		return nil
+	}
+
+	cookiePool.StickyClients[sessionID] = adapter.L7BackendServer
+
+	log.Printf("[COOKIE_ROUTING] New session mapped: %s -> %s", sessionID, server.GetAddress())
+
+	return server
 }

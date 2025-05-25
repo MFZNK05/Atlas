@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"sync"
+	"time"
 
 	backend "github.com/Faizan2005/Backend"
 	netw "github.com/Faizan2005/Network"
@@ -33,9 +35,17 @@ func main() {
 
 	dynamicPool := backend.NewL7ServerPool(dynamicPoolOpts)
 
+	cookiePoolOpts := backend.L7PoolOpts{
+		Name:    "cookie",
+		Servers: backend.MakeL7CookieTestServers(),
+	}
+
+	cookiePool := backend.NewL7ServerPool(cookiePoolOpts)
+
 	L7pools := map[string]*backend.L7ServerPool{
 		"static":  staticPool,
 		"dynamic": dynamicPool,
+		"cookie":  cookiePool,
 	}
 
 	L7Prop := netw.NewL7LBProperties(L7pools)
@@ -48,16 +58,16 @@ func main() {
 
 	go ClientServer()
 
-	// go func() {
-	// 	for {
-	// 		time.Sleep(3 * time.Second)
-	// 		fmt.Println("=== Backend Server States ===")
-	// 		for _, srv := range L4pool.Servers {
-	// 			fmt.Printf("Server: %s | ConnCount: %d\n | Weight: %d\n", srv.Address, srv.ConnCount, srv.Weight)
-	// 		}
-	// 		fmt.Println("=============================")
-	// 	}
-	// }()
+	go func() {
+		for {
+			time.Sleep(3 * time.Second)
+			fmt.Println("=== Backend Server States ===")
+			for _, srv := range L4pool.Servers {
+				fmt.Printf("Server: %s | ConnCount: %d\n | Weight: %d\n", srv.Address, srv.ConnCount, srv.Weight)
+			}
+			fmt.Println("=============================")
+		}
+	}()
 
 	select {}
 }

@@ -33,6 +33,20 @@ func (lb *LBProperties) HandleHTTP(peekReader *bufio.Reader, conn net.Conn) {
 		return
 	}
 
+	// Health checking all servers
+	go func() {
+		for {
+			for sName, pool := range lb.L7LBProperties.L7Pools {
+				// Perform health check for the current pool
+				pool.L7HealthChecker()
+				log.Printf("[HEALTH_CHECK] Health check completed for pool: %s", sName)
+			}
+
+			// Sleep for a specified duration before the next round of health checks
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	server := lb.SelectL7Server(req)
 
 	// path := req.URL.Path

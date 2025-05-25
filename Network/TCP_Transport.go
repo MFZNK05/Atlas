@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 
 	algorithm "github.com/Faizan2005/Balancer"
 )
@@ -57,12 +58,12 @@ func (p *LBProperties) handleConn(conn net.Conn) {
 		conn.Close()
 	}()
 
-	// go func() {
-	// 	for {
-	// 		p.ServerPool.HealthChecker()
-	// 		time.Sleep(5 * time.Second)
-	// 	}
-	// }()
+	go func() {
+		for {
+			p.L4ServerPool.L4HealthChecker()
+			time.Sleep(5 * time.Second)
+		}
+	}()
 
 	algoName := algorithm.SelectAlgoL4(p.L4ServerPoolInterface)
 

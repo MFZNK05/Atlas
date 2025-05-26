@@ -49,38 +49,6 @@ func (lb *LBProperties) HandleHTTP(peekReader *bufio.Reader, conn net.Conn) {
 
 	server := lb.SelectL7Server(req)
 
-	// path := req.URL.Path
-	// cookie, err := req.Cookie("session_id")
-	// if err == http.ErrNoCookie {
-	// 	log.Printf("[HTTP_HANDLER] SESSION cookie not available: %v", err)
-	// } else if err != nil {
-	// 	log.Printf("[HTTP_HANDLER] Error retrieving SESSION cookie: %v", err)
-	// } else {
-	// 	// Cookie found, you can use it here
-	// 	log.Printf("[HTTP_HANDLER] SESSION cookie found: %s", cookie.Value)
-	// 	server := lb.ClassifyCookieRequest(cookie.Value)
-	// }
-
-	// urlType := ClassifyURLRequest(path)
-	// pool := lb.L7LBProperties.L7Pools[urlType]
-	// if pool == nil {
-	// 	log.Printf("[HTTP_HANDLER] No server pool found for URL type: %s", urlType)
-	// 	return
-	// }
-
-	// l7Adapter := algorithm.L7PoolAdapter{pool}
-	// algoName := algorithm.SelectAlgoL7(&l7Adapter)
-	// if algoName == "" {
-	// 	log.Println("[HTTP_HANDLER] No algorithm selected for L7 request")
-	// 	return
-	// }
-
-	// server := algorithm.ApplyAlgo(&l7Adapter, algoName, lb.AlgorithmsMap)
-	// if server == nil {
-	// 	log.Println("[HTTP_HANDLER] No server returned by algorithm")
-	// 	return
-	// }
-
 	log.Printf("[HTTP_HANDLER] Selected backend: %s", server.GetAddress())
 
 	// Update server connection count

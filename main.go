@@ -59,7 +59,7 @@ func main() {
 	go ClientServer()
 
 	var wg sync.WaitGroup
-	numEach := 10 // number of requests per type
+	numEach := 20 // number of requests per type
 
 	for i := 0; i < numEach; i++ {
 		wg.Add(3)
@@ -74,11 +74,21 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(3 * time.Second)
-			fmt.Println("=== Backend Server States ===")
+
+			fmt.Println("=== Backend Server States (L4) ===")
 			for _, srv := range L4pool.Servers {
-				fmt.Printf("Server: %s | ConnCount: %d\n | Weight: %d\n", srv.Address, srv.ConnCount, srv.Weight)
+				fmt.Printf("Server: %s  ConnCount: %d  Weight: %d\n", srv.Address, srv.ConnCount, srv.Weight)
 			}
-			fmt.Println("=============================")
+			fmt.Println("==================================")
+
+			fmt.Println("=== Backend Server States (L7) ===")
+			for poolName, pool := range L7pools {
+				fmt.Printf("Pool: %s\n", poolName)
+				for _, srv := range pool.Servers {
+					fmt.Printf("  Server: %s    ReqCount: %d    Weight: %d\n", srv.Address, srv.ReqCount, srv.Weight)
+				}
+				fmt.Println("----------------------------------")
+			}
 		}
 	}()
 

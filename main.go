@@ -58,6 +58,19 @@ func main() {
 
 	go ClientServer()
 
+	var wg sync.WaitGroup
+	numEach := 10 // number of requests per type
+
+	for i := 0; i < numEach; i++ {
+		wg.Add(3)
+		go SendStaticRequest(&wg)
+		go SendDynamicRequest(&wg)
+		go SendCookieRequest(&wg)
+		time.Sleep(100 * time.Millisecond) // small delay to simulate staggered clients
+	}
+
+	wg.Wait()
+
 	go func() {
 		for {
 			time.Sleep(3 * time.Second)

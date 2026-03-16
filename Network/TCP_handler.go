@@ -23,6 +23,10 @@ func (p *LBProperties) ListenAndAccept() error {
 
 	go p.loopAndAccept()
 
+	// Start health checks once (not per-connection)
+	go p.L4ServerPool.L4HealthChecker()
+	go p.startL7HealthChecks()
+
 	return nil
 }
 
@@ -58,13 +62,6 @@ func (p *LBProperties) handleConn(conn net.Conn) {
 		conn.Close()
 	}()
 
-	go func() {
-		for {
-			p.L4ServerPool.L4HealthChecker()
-			time.Sleep(5 * time.Second)
-		}
-	}()
-
 	algoName := algorithm.SelectAlgoL4(p.L4ServerPoolInterface)
 
 	log.Printf("Selected algo to implement (%s)", algoName)
@@ -76,7 +73,7 @@ func (p *LBProperties) handleConn(conn net.Conn) {
 	server.SetConnCount(server.GetConnCount() + 1)
 	server.Unlock()
 
-	backendConn, err := net.Dial("tcp", server.GetAddress())
+	backendConn, err := net.DialTimeout("tcp", server.GetAddress(), 5*time.Second)
 	if err != nil {
 		log.Printf("Failed to dial backend: %v", err)
 		return
@@ -94,6 +91,12 @@ func (p *LBProperties) handleConn(conn net.Conn) {
 		log.Printf("Closing backend connection with server %s", backendConn.RemoteAddr())
 		backendConn.Close()
 	}()
+}
+
+func (p *LBProperties) startL7HealthChecks() {
+	for _, pool := range p.L7LBProperties.L7Pools {
+		go pool.L7HealthChecker() // each pool gets its own goroutine (blocks forever)
+	}
 }
 
 func isHTTP(data []byte) bool {

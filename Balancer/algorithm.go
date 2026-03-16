@@ -178,12 +178,15 @@ func (lc *AlgoLeastConn) ImplementAlgo(pool ServerPool) Server {
 	pool.Lock()
 	defer pool.Unlock()
 
-	selected := new(Server)
+	var selected Server
 	minConns := int(^uint(0) >> 1) // Max int
 
 	log.Println("Least Connections: Evaluating servers for least connections")
 
 	for _, s := range pool.GetServers() {
+		if !s.IsAlive() {
+			continue
+		}
 		s.Lock()
 		cCount := s.GetConnCount()
 		s.Unlock()
@@ -191,15 +194,15 @@ func (lc *AlgoLeastConn) ImplementAlgo(pool ServerPool) Server {
 		log.Printf("Least Connections: Server %s has %d connections", s.GetAddress(), cCount)
 
 		if selected == nil || cCount < minConns {
-			selected = &s
+			selected = s
 			minConns = cCount
 			log.Printf("Least Connections: New selected server %s with %d connections", s.GetAddress(), cCount)
 		}
 	}
 
 	if selected != nil {
-		log.Printf("Least Connections: Selected server %s with %d connections", (*selected).GetAddress(), minConns)
-		return *selected
+		log.Printf("Least Connections: Selected server %s with %d connections", selected.GetAddress(), minConns)
+		return selected
 	}
 
 	log.Println("Least Connections: No server selected")
@@ -284,12 +287,22 @@ func IPHash(pool ServerPool, host_ip string) Server {
 	hash := fnv.New32a()
 	hash.Write([]byte(ip))
 	hashValue := hash.Sum32()
-	index := int(hashValue) % len(pool.GetServers())
+	n := len(pool.GetServers())
+	index := int(hashValue) % n
 
 	fmt.Printf("[IPHash] FNV Hash Value: %d, Backend Index: %d\n", hashValue, index)
-	fmt.Printf("[IPHash] Selected Backend: %s\n", pool.GetServer(index).GetAddress())
 
-	return pool.GetServer(index)
+	// Walk forward if hashed server is dead
+	for i := 0; i < n; i++ {
+		candidate := pool.GetServer((index + i) % n)
+		if candidate.IsAlive() {
+			fmt.Printf("[IPHash] Selected Backend: %s\n", candidate.GetAddress())
+			return candidate
+		}
+	}
+
+	fmt.Println("[IPHash] No alive server found")
+	return nil
 }
 
 func HasLoadImbalance(pool ServerPool) bool {
@@ -335,28 +348,35 @@ func (wlc *AlgoWLeastConn) ImplementAlgo(pool ServerPool) Server {
 	pool.Lock()
 	defer pool.Unlock()
 
-	selected := new(Server)
+	var selected Server
 	minScore := int(^uint(0) >> 1) // Max int
 
 	log.Println("Weighted Least Connections: Evaluating servers for least connections")
 
 	for _, s := range pool.GetServers() {
+		if !s.IsAlive() {
+			continue
+		}
 		s.Lock()
-		score := int(s.GetConnCount()) / int(s.GetWeight())
+		weight := s.GetWeight()
+		if weight == 0 {
+			weight = 1
+		}
+		score := s.GetConnCount() / weight
 		s.Unlock()
 
-		log.Printf("Weighted Least Connections: Server %s has %d connections", s.GetAddress(), score)
+		log.Printf("Weighted Least Connections: Server %s has score %d", s.GetAddress(), score)
 
 		if selected == nil || score < minScore {
-			selected = &s
+			selected = s
 			minScore = score
-			log.Printf("Weighted Least Connections: New selected server %s with %d connections", s.GetAddress(), score)
+			log.Printf("Weighted Least Connections: New selected server %s with score %d", s.GetAddress(), score)
 		}
 	}
 
 	if selected != nil {
-		log.Printf("Weighted Least Connections: Selected server %s with %d score", (*selected).GetAddress(), minScore)
-		return *selected
+		log.Printf("Weighted Least Connections: Selected server %s with score %d", selected.GetAddress(), minScore)
+		return selected
 	}
 
 	log.Println("Weighted Least Connections: No server selected")
